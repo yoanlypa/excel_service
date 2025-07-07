@@ -1,4 +1,3 @@
-# bot.py
 import logging
 from telegram import Update
 from telegram.ext import (
@@ -28,11 +27,10 @@ async def handle_doc(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     content = await doc.get_file().download_as_bytearray()
     try:
-        pedido = parse_excel(content)
+        pedidos = parse_excel(content)
         api = ApiClient()
-        await api.post_pedido(pedido)
-        count = len(pedido['maletas'])
-        await update.message.reply_text(f"✅ Pedido registrado con {count} maletas.")
+        await api.post_pedidos(pedidos)
+        await update.message.reply_text(f"✅ Registrados {len(pedidos)} pedidos.")
     except ParseError as e:
         await update.message.reply_text(f"❌ Error de parseo: {e}")
         logger.exception(e)
