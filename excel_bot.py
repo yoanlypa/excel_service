@@ -1,81 +1,61 @@
-# excel_bot.py  ── Python 3.10+
-"""
-Recibe exceles en Telegram, los convierte a JSON y los envía a
-/api/pedidos/bulk/ en tu Django.
-Estructura de fichero compatible con los ejemplos:
-  - Metadatos en las primeras filas (Service Date, Ship…)
-  - Cabecera real en la fila donde A = 'Sign'
-  - Datos a partir de la fila siguiente
-"""
+# excel_bot.py  ── versión estable (loop‑safe) 2025‑07‑07
+# Recibe .xlsx vía Telegram y los inserta en Django. Compatible con python‑telegram‑bot v21+
 
 import os, tempfile, requests, datetime as dt
 import pandas as pd
 from dotenv import load_dotenv
 from telegram.ext import ApplicationBuilder, MessageHandler, filters
 
-# ─────── Config ──────────────────────────────────────────────────────────
-load_dotenv()                                    # lee .env local / Railway
-TOKEN       = os.environ["TG_TOKEN"]             # BotFather
+load_dotenv()
+TOKEN       = os.environ["TG_TOKEN"]
 DJANGO_URL  = os.environ["DJANGO_URL"].rstrip("/") + "/api/pedidos/bulk/"
-API_KEY     = os.getenv("DJANGO_KEY", "")        # opcional header auth
-MAX_SIZE_MB = 5                                  # si quieres limitar
+API_KEY     = os.getenv("DJANGO_KEY", "")
+MAX_SIZE_MB = 5
 
-# ─────── Excel → pedidos (parser robusto) ────────────────────────────────
+# ────────────────────────────── parser Excel ─────────────────────────────
+
 def parse_excel(path: str):
-    """Devuelve lista de dicts listos para POST /pedidos/bulk/"""
-    # 1. Lee TODAS las filas para localizar cabecera 'Sign'
-    df = pd.read_excel(path, engine="openpyxl", header=None)
-    # Localiza fila donde col-0 == 'Sign'
-    header_row = df.index[df.iloc[:, 0] == "Sign"]
+    """Devuelve lista de dicts listos para JSON (sin objetos date)."""
+    df0 = pd.read_excel(path, engine="openpyxl", header=None)
+    header_row = df0.index[df0.iloc[:, 0] == "Sign"]
     if header_row.empty:
-        raise ValueError("No encuentro cabecera 'Sign' en la columna A")
-    header_idx = header_row[0]
-    df = pd.read_excel(
-        path,
-        engine="openpyxl",
-        skiprows=header_idx,
-        header=0,
-        dtype=str
-    )
+        raise ValueError("No encuentro cabecera 'Sign'")
+    hr = header_row[0]
+    df = pd.read_excel(path, engine="openpyxl", skiprows=hr, header=0, dtype=str)
 
-    # Renombra columnas canónicas
-    rename_map = {
-        df.columns[0]: "grupo",         # Sign
+    rename = {
+        df.columns[0]: "grupo",
         df.columns[1]: "excursion",
-        df.columns[5]: "hora_inicio",   # Arrival / Meeting time
-        df.columns[6]: "ad",            # Adultos
-        df.columns[7]: "ch",            # Niños
+        df.columns[5]: "hora_inicio",
+        df.columns[6]: "ad",
+        df.columns[7]: "ch",
     }
-    df = df.rename(columns=rename_map)
-
-    # Lee la fecha de servicio de las filas superiores
-    meta = pd.read_excel(path, engine="openpyxl", nrows=10, header=None)
-    service_row = meta[meta.iloc[:, 0] == "Service Date"]
-    if service_row.empty:
-        raise ValueError("No encuentro 'Service Date'")
-    fecha_servicio = service_row.iloc[0, 1]
-    if isinstance(fecha_servicio, str):
-        fecha_servicio = pd.to_datetime(fecha_servicio).date()
-    elif isinstance(fecha_servicio, dt.datetime):
-        fecha_servicio = fecha_servicio.date()
-
-    # Limpia filas vacías
+    df = df.rename(columns=rename)
     df = df[df["grupo"].notna()]
 
-    # Convierte a formato esperado por tu API
+    meta = pd.read_excel(path, engine="openpyxl", nrows=10, header=None)
+    row = meta[meta.iloc[:, 0] == "Service Date"]
+    if row.empty:
+        raise ValueError("No encuentro 'Service Date'")
+    fecha_servicio = pd.to_datetime(row.iloc[0, 1]).date()
+
     pedidos = []
-    for _, row in df.iterrows():
-        adultos = int(row.get("ad") or 0)
-        ninos   = int(row.get("ch") or 0)
+    for _, r in df.iterrows():
+        adultos = int(r.get("ad") or 0)
+        ninos   = int(r.get("ch") or 0)
+        hora_raw = r.get("hora_inicio")
+        try:
+            hora_iso = pd.to_datetime(hora_raw).time().isoformat(timespec="minutes") if hora_raw else None
+        except Exception:
+            hora_iso = None
         pedidos.append({
-            "grupo":        str(row["grupo"]).strip(),
-            "excursion":    str(row["excursion"]).strip(),
-            "fecha_inicio": fecha_servicio,          # YYYY-MM-DD
-            "hora_inicio":  row.get("hora_inicio") or None,
+            "grupo":        str(r["grupo"]).strip(),
+            "excursion":    str(r.get("excursion") or "").strip(),
+            "fecha_inicio": fecha_servicio.isoformat(),
+            "hora_inicio":  hora_iso,
             "pax":          adultos + ninos,
-            "emisores":     adultos + ninos,         # adaptar si usas otro campo
-            # campos opcionales del modelo:
-            "lugar_entrega":  None,
+            "emisores":     adultos + ninos,
+            "lugar_entrega": None,
             "lugar_recogida": None,
             "fecha_fin":     None,
             "hora_fin":      None,
@@ -84,10 +64,11 @@ def parse_excel(path: str):
             "notas":         "",
         })
     if not pedidos:
-        raise ValueError("No se encontraron filas de datos")
+        raise ValueError("Archivo sin filas de datos")
     return pedidos
 
-# ─────── Bot Telegram (polling) ───────────────────────────────────────────
+# ────────────────────────────── Bot handler ──────────────────────────────
+
 async def handle_doc(update, context):
     doc = update.message.document
     if not doc.file_name.endswith(".xlsx"):
@@ -95,22 +76,17 @@ async def handle_doc(update, context):
     if doc.file_size > MAX_SIZE_MB * 1024 * 1024:
         await update.message.reply_text("❌ Archivo demasiado grande")
         return
-
-    # Descarga a fichero temporal
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
-        await doc.get_file().download_to_drive(custom_path=tmp.name)
+        tg_file = await doc.get_file()
+        await tg_file.download_to_drive(custom_path=tmp.name)
         try:
             pedidos = parse_excel(tmp.name)
-            r = requests.post(
-                DJANGO_URL,
-                json=pedidos,
-                headers={"Authorization": f"Bearer {API_KEY}"} if API_KEY else {},
-                timeout=15,
-            )
+            headers = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
+            r = requests.post(DJANGO_URL, json=pedidos, headers=headers, timeout=15)
             if r.ok:
                 await update.message.reply_text(f"✅ Importados {len(pedidos)} pedidos.")
             else:
-                await update.message.reply_text(f"❌ Error API: {r.status_code} {r.text[:180]}")
+                await update.message.reply_text(f"❌ API {r.status_code}: {r.text[:180]}")
         except Exception as e:
             await update.message.reply_text(f"❌ {e}")
 
