@@ -16,8 +16,8 @@ from telegram.ext import ApplicationBuilder, MessageHandler, filters
 # ─────── Config ──────────────────────────────────────────────────────────
 load_dotenv()                                    # lee .env local / Railway
 TOKEN       = os.environ["TG_TOKEN"]             # BotFather
-DJANGO_URL  = os.environ["DJANGO_URL"].rstrip("/") + "/api/pedidos/bulk/"
-API_KEY     = os.getenv("DJANGO_KEY", "")        # opcional header auth
+DJANGO_URL  = os.environ["VITE_API_URL"].rstrip("/") + "/api/pedidos/bulk/"
+API_KEY     = os.getenv("SECRET_KEY", "")        # opcional header auth
 MAX_SIZE_MB = 5                                  # si quieres limitar
 
 # ─────── Excel → pedidos (parser robusto) ────────────────────────────────
