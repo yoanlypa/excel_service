@@ -100,7 +100,7 @@ async def handle_doc(update, context):
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
         tg_file = await doc.get_file()
         await tg_file.download_to_drive(custom_path=tmp.name)
-         try:
+        try:
             pedidos = parse_excel(tmp.name)
             r = requests.post(
                 DJANGO_URL,
