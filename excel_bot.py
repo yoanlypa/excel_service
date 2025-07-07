@@ -114,8 +114,14 @@ async def handle_doc(update, context):
         except Exception as e:
             await update.message.reply_text(f"❌ {e}")
 
-if __name__ == "__main__":
+import asyncio
+
+async def main():
     print("Bot Excel → Pedidos arrancando...")
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(MessageHandler(filters.Document.ALL, handle_doc))
-    app.run_polling()           # cómodo y gratis para pruebas
+    await app.bot.delete_webhook(drop_pending_updates=True)
+    await app.run_polling()           # cómodo y gratis para pruebas
+
+if __name__ == "__main__":
+    asyncio.run(main())
