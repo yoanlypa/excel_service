@@ -1,4 +1,3 @@
-# config.py
 from pydantic import BaseSettings, Field, HttpUrl
 
 class Settings(BaseSettings):
@@ -9,6 +8,6 @@ class Settings(BaseSettings):
     max_size_mb: int = Field(5, env="MAX_SIZE_MB")
 
     class Config:
-        env_file = ".env"   # Solo en desarrollo
+        env_file = ".env"   # Solo en desarrollo/local
 
 settings = Settings()
