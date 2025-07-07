@@ -1,4 +1,3 @@
-# client.py
 import httpx
 from .config import settings
 from .exceptions import ApiError
@@ -14,8 +13,11 @@ class ApiClient:
             timeout=10
         )
 
-    async def post_pedido(self, pedido: dict) -> dict:
-        resp = await self.client.post("/pedidos/bulk/", json=[pedido])
+    async def post_pedidos(self, pedidos: list[dict]) -> dict:
+        """
+        Envía la lista de pedidos a Django en /pedidos/bulk/
+        """
+        resp = await self.client.post("/pedidos/bulk/", json=pedidos)
         if resp.status_code >= 400:
             raise ApiError(f"Status {resp.status_code}: {resp.text}")
         return resp.json()
