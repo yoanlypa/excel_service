@@ -1,8 +1,8 @@
-# excel_bot.py  ── versión parcheada 2025‑07‑07
-# Bot que recibe archivos .xlsx por Telegram y crea pedidos en Django
+# excel_bot.py  ── versión estable (loop‑safe) 2025‑07‑07
+# Recibe .xlsx vía Telegram y los inserta en Django. Compatible con python‑telegram‑bot v21+
 
 import os, tempfile, requests, datetime as dt
-import pandas as pd, asyncio
+import pandas as pd
 from dotenv import load_dotenv
 from telegram.ext import ApplicationBuilder, MessageHandler, filters
 
@@ -11,14 +11,6 @@ TOKEN       = os.environ["TG_TOKEN"]
 DJANGO_URL  = os.environ["DJANGO_URL"].rstrip("/") + "/api/pedidos/bulk/"
 API_KEY     = os.getenv("DJANGO_KEY", "")
 MAX_SIZE_MB = 5
-
-# ────────────────────────────── utilidades ───────────────────────────────
-
-def iso(v):
-    """Convierte date/datetime/time a str ISO; deja el resto intacto."""
-    if isinstance(v, (dt.date, dt.datetime, dt.time)):
-        return v.isoformat()
-    return v
 
 # ────────────────────────────── parser Excel ─────────────────────────────
 
@@ -58,7 +50,7 @@ def parse_excel(path: str):
             hora_iso = None
         pedidos.append({
             "grupo":        str(r["grupo"]).strip(),
-            "excursion":    str(r["excursion"]).strip(),
+            "excursion":    str(r.get("excursion") or "").strip(),
             "fecha_inicio": fecha_servicio.isoformat(),
             "hora_inicio":  hora_iso,
             "pax":          adultos + ninos,
@@ -98,13 +90,13 @@ async def handle_doc(update, context):
         except Exception as e:
             await update.message.reply_text(f"❌ {e}")
 
-# ─────────────────────────────────────────────────────────────────────────
+# ────────────────────────────── main (bloqueante) ───────────────────────
 
-async def main():
+def main():
     print("Bot Excel → Pedidos arrancando…")
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(MessageHandler(filters.Document.ALL, handle_doc))
-    await app.run_polling()
+    app.run_polling()   # bloquea y maneja su propio bucle
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
