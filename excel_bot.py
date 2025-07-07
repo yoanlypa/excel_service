@@ -104,7 +104,7 @@ async def handle_doc(update, context):
 
     try:
         pedidos = parse_excel(tmp.name)
-        headers = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
+        headers = {"Authorization": f"Token {API_KEY}"} if API_KEY else {}
         resp = requests.post(DJANGO_URL, json=pedidos, headers=headers, timeout=20)
         if resp.ok:
             await update.message.reply_text(f"✅ Importados {len(pedidos)} pedidos.")
