@@ -87,7 +87,7 @@ def parse_excel(path: str):
 
 
 async def handle_doc(update, context):
-    """Maneja cada documento recibido en Telegram."""
+    print("🔧 DEBUG: using header:", {"Authorization": f"Token {API_KEY}"} if API_KEY else "<none>")
     doc = update.message.document
     # Solo .xlsx
     if not doc.file_name.lower().endswith(".xlsx"):
