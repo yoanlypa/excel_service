@@ -96,8 +96,9 @@ async def main():
     print("Bot Excel → Pedidos arrancando...")
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(MessageHandler(filters.Document.ALL, handle_doc))
-    await app.bot.delete_webhook(drop_pending_updates=True)
-    await app.run_polling()           # cómodo y gratis para pruebas
+    asyncio.run(app.bot.delete_webhook(drop_pending_updates=True))
+    app.run_polling(allowed_updates=app.resolve_default_updates())
+    print("Bot Excel → Pedidos listo.")
 
 if __name__ == "__main__":
     asyncio.run(main())
