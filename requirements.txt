@@ -1,6 +1,5 @@
 fastapi
 uvicorn[standard]
-python-telegram-bot~=20.0
 httpx[http2]
 pydantic
 pandas
